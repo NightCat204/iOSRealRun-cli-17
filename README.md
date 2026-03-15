@@ -21,6 +21,7 @@
 2. 安装依赖（建议使用虚拟环境）  
     ```shell
     conda create -n iOSRealRun python=3.12
+    conda activate iOSRealRun
     
     pip3 install -r requirements.txt
     ```
@@ -45,9 +46,9 @@
     ```
     MacOS 打开终端，先进入项目目录，然后执行以下命令  
     ```shell
-    sudo python3 main.py
+    python main.py
     ```
-    > 需要 管理员 或 root 权限是因为需要创建 tun 设备  
+    > 需要 管理员 或 root 权限是因为需要创建 tun 设备。MacOS 下程序会自动请求 sudo，请不要使用 `sudo python3 main.py`，否则很容易切到系统 Python 导致找不到虚拟环境中的依赖。  
 
 6. 按照提示操作，如果一直说没有设备连接，Windows请确保 iTunes 已安装（可能需要打开），重新运行程序，在第3步时请确保设备已连接，解锁并信任
 
