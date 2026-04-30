@@ -143,8 +143,9 @@ def run1(dvt, loc: list, v, dt=0.2):
     for i in fixedLoc:
         # utils.setLoc(bd09Towgs84(i))
         location.set_location(dvt, **bd09Towgs84(i))
-        while time.time()-clock < dt:
-            pass
+        remaining = dt - (time.time() - clock)
+        if remaining > 0:
+            time.sleep(remaining)
         clock = time.time()
 
 def run(dvt, loc: list, v, d=15):

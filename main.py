@@ -24,6 +24,13 @@ def install_logging(level: int):
 
 
 install_logging(logging.INFO)
+
+
+def _request_stop(signum, frame):
+    # SIGTERM / SIGHUP → KeyboardInterrupt，使 finally 块能正常执行清理
+    raise KeyboardInterrupt
+
+
 logging.getLogger("wintun").setLevel(logging.DEBUG if debug else logging.WARNING)
 logging.getLogger("quic").setLevel(logging.DEBUG if debug else logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.DEBUG if debug else logging.WARNING)
@@ -124,6 +131,9 @@ def main():
     original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     process, address, port = tunnel_module.tunnel()
     signal.signal(signal.SIGINT, original_sigint_handler)
+    if sys.platform != "win32":
+        signal.signal(signal.SIGTERM, _request_stop)
+        signal.signal(signal.SIGHUP, _request_stop)
     logger.info("tunnel started")
     try:
         logger.debug(f"tunnel address: {address}, port: {port}")
@@ -146,6 +156,10 @@ def main():
                 finally:
                     logger.debug(f"Is process alive? {process.is_alive()}")
                     logger.debug("Start to clear location")
+                    # 清理期间屏蔽自定义信号，防止清理流程被二次中断
+                    if sys.platform != "win32":
+                        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+                        signal.signal(signal.SIGHUP, signal.SIG_DFL)
                     location_module.clear_location(dvt)
                     logger.info("Location cleared")
 
@@ -154,6 +168,10 @@ def main():
         logger.debug("get KeyboardInterrupt (outer)")
     finally:
         # stop the tunnel process
+        # 若未经内层 finally，在此兜底恢复信号默认行为
+        if sys.platform != "win32":
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGHUP, signal.SIG_DFL)
         logger.debug(f"Is process alive? {process.is_alive()}")
         logger.debug("terminating tunnel process")
         process.terminate()
