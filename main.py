@@ -43,6 +43,18 @@ logging.getLogger("blib2to3.pgen2.driver").setLevel(logging.DEBUG if debug else 
 logging.getLogger("urllib3.connectionpool").setLevel(logging.DEBUG if debug else logging.WARNING)
 
 
+TUNNEL_TROUBLESHOOTING = """
+请按以下顺序排查：
+  1. 设备是否已解锁、且已对本机点过「信任」
+  2. 设置 -> 隐私与安全性 -> 开发者模式 是否已开启（改动后需重启设备）
+  3. 换一条数据线或换个 USB 口，避免用扩展坞
+  4. 是否已有另一个实例在运行：pgrep -fl "main.py"
+  5. iOS 版本较新时，隧道协议可能需要更新的 pymobiledevice3：
+     pip install -U pymobiledevice3
+  6. 加 DEBUG=1 重跑可看到完整日志：DEBUG=1 python main.py
+"""
+
+
 def ensure_macos_root():
     if sys.platform != "darwin" or os.geteuid() == 0:
         return
@@ -128,12 +140,20 @@ def main():
 
     # start the tunnel in another process
     logger.info("starting tunnel")
-    original_sigint_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    process, address, port = tunnel_module.tunnel()
-    signal.signal(signal.SIGINT, original_sigint_handler)
+    # 主进程不再屏蔽 SIGINT：隧道子进程已自行忽略它（见 init/tunnel.py），
+    # 因此建立隧道期间 Ctrl+C 始终可用，不会出现无法中断的卡死
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, _request_stop)
         signal.signal(signal.SIGHUP, _request_stop)
+    try:
+        process, address, port = tunnel_module.tunnel()
+    except tunnel_module.TunnelError as exc:
+        print(f"\n{exc}")
+        print(TUNNEL_TROUBLESHOOTING)
+        raise SystemExit(1) from exc
+    except KeyboardInterrupt:
+        print("\n已取消，隧道子进程已清理")
+        raise SystemExit(130)
     logger.info("tunnel started")
     try:
         logger.debug(f"tunnel address: {address}, port: {port}")
@@ -174,7 +194,8 @@ def main():
             signal.signal(signal.SIGHUP, signal.SIG_DFL)
         logger.debug(f"Is process alive? {process.is_alive()}")
         logger.debug("terminating tunnel process")
-        process.terminate()
+        # terminate -> join -> kill，确保持有 tun 设备的子进程真正退出
+        tunnel_module.stop_tunnel(process)
         logger.info("tunnel process terminated")
         print("Bye")
     

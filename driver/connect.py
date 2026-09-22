@@ -12,6 +12,10 @@ from pymobiledevice3.services.amfi import AmfiService
 
 from pymobiledevice3.exceptions import NoDeviceConnectedError
 
+# 子进程 -> 主进程的队列消息标记
+TUNNEL_OK = "ok"
+TUNNEL_ERROR = "error"
+
 def get_usbmux_lockdownclient():
     while True:
         try:
@@ -50,6 +54,17 @@ def get_serverrsd():
 
 
 async def tunnel(rsd: RemoteServiceDiscoveryService, queue: multiprocessing.Queue):
-    async with start_tunnel(rsd, None) as tunnel_result:
-        queue.put((tunnel_result.address, tunnel_result.port))
-        await tunnel_result.client.wait_closed()
+    """建立隧道并把结果回传给主进程。
+
+    成功与失败都必须往队列里写一条消息：隧道建立失败时（例如 QUIC 握手
+    抛 ConnectionError）若什么都不写，主进程的 queue.get() 会永久阻塞。
+    """
+    try:
+        async with start_tunnel(rsd, None) as tunnel_result:
+            queue.put((TUNNEL_OK, tunnel_result.address, tunnel_result.port))
+            await tunnel_result.client.wait_closed()
+    except BaseException as exc:
+        # BaseException 覆盖 SystemExit / KeyboardInterrupt：
+        # 这些同样会让子进程退出而不写队列
+        queue.put((TUNNEL_ERROR, type(exc).__name__, str(exc)))
+        raise
