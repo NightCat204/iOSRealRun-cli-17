@@ -75,6 +75,9 @@ def randLoc(loc: list, d=0.000025, n=5):
     for i in loc:
         result.append(i.copy())
 
+    if not result:
+        return result
+
     center = {"lat": 0, "lng": 0}
     for i in result:
         center["lat"] += i["lat"]
@@ -108,6 +111,10 @@ def randLoc(loc: list, d=0.000025, n=5):
     return result
 
 def fixLockT(loc: list, v, dt):
+    if v <= 0:
+        raise ValueError(f"速度必须为正数，当前为 {v} m/s")
+    if len(loc) < 2:
+        raise ValueError(f"路线至少需要 2 个点，当前为 {len(loc)} 个")
     fixedLoc = []
     t = 0
     T = []
@@ -148,9 +155,21 @@ def run1(dvt, loc: list, v, dt=0.2):
             time.sleep(remaining)
         clock = time.time()
 
+def randSpeed(v, d):
+    """按配速（秒/公里）做 ±d 秒的随机扰动后换算回 m/s。
+
+    扰动幅度不超过配速的一半，否则配速极快（v 很大）时
+    pace - offset 可能变成 0 或负数，导致速度为负、fixLockT 返回空列表。
+    """
+    pace = 1000/v  # 秒/公里
+    amp = min(d, pace/2)
+    return 1000/(pace - (2*random.random()-1)*amp)
+
 def run(dvt, loc: list, v, d=15):
+    if v <= 0:
+        raise ValueError(f"config.yaml 中的速度 v 必须为正数，当前为 {v}")
     random.seed(time.time())
     while True:
-        vRand = 1000/(1000/v-(2*random.random()-1)*d)
+        vRand = randSpeed(v, d)
         run1(dvt, loc, vRand)
         print("跑完一圈了")
