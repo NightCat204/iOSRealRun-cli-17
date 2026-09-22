@@ -141,6 +141,23 @@ def fixLockT(loc: list, v, dt):
             t += dt
     return fixedLoc
 
+# 里程估计保守系数：运动 App 会对 GPS 轨迹做平滑，记录里程通常略小于
+# 逐点累加的结果。宁可少算，避免按显示达标时实际里程不够。
+DIST_FACTOR = 0.98
+
+def lapDistance(fixedLoc: list):
+    """按实际注入的坐标点累加该圈里程（偏保守）。
+
+    只累加注入点之间的距离，不计最后一个点回到起点的闭合段，
+    与 DIST_FACTOR 一起构成保守估计。
+    """
+    if len(fixedLoc) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(len(fixedLoc)-1):
+        total += geodistance(fixedLoc[i], fixedLoc[i+1])
+    return total * DIST_FACTOR
+
 def run1(dvt, loc: list, v, dt=0.2):
     fixedLoc = fixLockT(loc, v, dt)
     nList = (5, 6, 7, 8, 9)
@@ -154,6 +171,7 @@ def run1(dvt, loc: list, v, dt=0.2):
         if remaining > 0:
             time.sleep(remaining)
         clock = time.time()
+    return lapDistance(fixedLoc)
 
 def randSpeed(v, d):
     """按配速（秒/公里）做 ±d 秒的随机扰动后换算回 m/s。
@@ -169,7 +187,21 @@ def run(dvt, loc: list, v, d=15):
     if v <= 0:
         raise ValueError(f"config.yaml 中的速度 v 必须为正数，当前为 {v}")
     random.seed(time.time())
-    while True:
-        vRand = randSpeed(v, d)
-        run1(dvt, loc, vRand)
-        print("跑完一圈了")
+    lap = 0
+    total = 0.0
+    nextKm = 1
+    started = time.time()
+    try:
+        while True:
+            vRand = randSpeed(v, d)
+            total += run1(dvt, loc, vRand)
+            lap += 1
+            print(f"第 {lap} 圈完成，累计 {total/1000:.2f} km")
+            while total >= nextKm * 1000:
+                elapsed = time.time() - started
+                print(f"===== 已累计 {nextKm} km，用时 {int(elapsed)//60} 分 {int(elapsed)%60:02d} 秒 =====")
+                nextKm += 1
+    finally:
+        elapsed = time.time() - started
+        print(f"本次共 {lap} 圈，累计约 {total/1000:.2f} km，"
+              f"用时 {int(elapsed)//60} 分 {int(elapsed)%60:02d} 秒")
